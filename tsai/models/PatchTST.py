@@ -10,7 +10,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch import Tensor
-from .layers import Transpose, get_act_fn, RevIN
+from .layers import Transpose, get_act_fn, RevIN, Noop
 warnings.filterwarnings("ignore", category=UserWarning)
 
 # %% ../../nbs/050b_models.PatchTST.ipynb 4
@@ -161,21 +161,24 @@ class _MultiheadAttention(nn.Module):
 
 # %% ../../nbs/050b_models.PatchTST.ipynb 7
 class Flatten_Head(nn.Module):
-    def __init__(self, individual, n_vars, nf, pred_dim):
+    def __init__(self, individual, c_in, c_out, nf, pred_dim, dropout=.1):
         super().__init__()
         
         if isinstance(pred_dim, (tuple, list)):
             pred_dim = pred_dim[-1]
         self.individual = individual
-        self.n = n_vars if individual else 1
         self.nf, self.pred_dim = nf, pred_dim
         
         if individual:
             self.layers = nn.ModuleList()
-            for i in range(self.n):
+            for i in range(c_in):
                 self.layers.append(nn.Sequential(nn.Flatten(start_dim=-2), nn.Linear(nf, pred_dim)))
         else:
             self.layer = nn.Sequential(nn.Flatten(start_dim=-2), nn.Linear(nf, pred_dim))
+            
+        self.to_c_out = nn.Sequential(nn.Dropout(dropout), 
+                                      nn.Conv1d(c_in, c_out, 1)) if c_in != c_out else Noop
+
             
     def forward(self, x:Tensor): 
         """
@@ -188,9 +191,10 @@ class Flatten_Head(nn.Module):
             for i, layer in enumerate(self.layers):
                 x_out.append(layer(x[:, i]))
             x = torch.stack(x_out, dim=1) 
-            return x
         else: 
-            return self.layer(x)
+            x = self.layer(x)
+        return self.to_c_out(x)
+     
 
 # %% ../../nbs/050b_models.PatchTST.ipynb 8
 class _TSTiEncoderLayer(nn.Module):
@@ -327,7 +331,7 @@ class _TSTiEncoder(nn.Module):  #i means channel-independent
 
 # %% ../../nbs/050b_models.PatchTST.ipynb 10
 class _PatchTST_backbone(nn.Module):
-    def __init__(self, c_in, seq_len, pred_dim, patch_len, stride, 
+    def __init__(self, c_in, c_out, seq_len, pred_dim, patch_len, stride, 
                  n_layers=3, d_model=128, n_heads=16, d_k=None, d_v=None,
                  d_ff=256, norm='BatchNorm', attn_dropout=0., dropout=0., 
                  act="gelu", res_attention=True, pre_norm=False, store_attn=False,
@@ -339,6 +343,10 @@ class _PatchTST_backbone(nn.Module):
         # RevIn
         self.revin = revin
         self.revin_layer = RevIN(c_in, affine=affine, subtract_last=subtract_last)
+        if c_in != c_out:
+            self.revin_layer_out = RevIN(c_out, affine=affine, subtract_last=subtract_last)
+        else:
+            self.revin_layer_out = self.revin_layer
 
         # # Patching
         self.patch_len = patch_len
@@ -360,9 +368,9 @@ class _PatchTST_backbone(nn.Module):
 
         # Head
         self.head_nf = d_model * patch_num
-        self.n_vars = c_in
+        #self.n_vars = c_in
         self.individual = individual
-        self.head = Flatten_Head(self.individual, self.n_vars, self.head_nf, pred_dim)
+        self.head = Flatten_Head(self.individual, c_in, c_out, self.head_nf, pred_dim)
         
     
     def forward(self, z:Tensor): 
@@ -388,14 +396,14 @@ class _PatchTST_backbone(nn.Module):
         
         # denorm
         if self.revin:
-            z = self.revin_layer(z, torch.tensor(False, dtype=torch.bool))
+            z = self.revin_layer_out(z, torch.tensor(False, dtype=torch.bool))
         return z
 
 # %% ../../nbs/050b_models.PatchTST.ipynb 11
 class PatchTST(nn.Module):
     def __init__(self,
          c_in,  # number of input channels
-         c_out, # used for compatibility
+         c_out, # numer of output channels
          seq_len,  # input sequence length
          pred_dim=None,  # prediction sequence length
          n_layers=2,  # number of encoder layers
@@ -425,17 +433,22 @@ class PatchTST(nn.Module):
         # model
         if pred_dim is None:
             pred_dim = seq_len
+        # Align c_out with pred_dim
+        if isinstance(pred_dim, (list, tuple)):
+            c_out = pred_dim[0]
+        else:
+            c_out = c_in
         
         self.decomposition = decomposition
         if self.decomposition:
             self.decomp_module = SeriesDecomposition(kernel_size)
-            self.model_trend = _PatchTST_backbone(c_in=c_in, seq_len=seq_len, pred_dim=pred_dim,
+            self.model_trend = _PatchTST_backbone(c_in=c_in, c_out=c_out, seq_len=seq_len, pred_dim=pred_dim,
                                                   patch_len=patch_len, stride=stride, n_layers=n_layers, d_model=d_model,
                                                   n_heads=n_heads, d_ff=d_ff, norm=norm, attn_dropout=attn_dropout,
                                                   dropout=dropout, act=activation, res_attention=res_attention, pre_norm=pre_norm, 
                                                   store_attn=store_attn, padding_patch=padding_patch, 
                                                   individual=individual, revin=revin, affine=affine, subtract_last=subtract_last)
-            self.model_res = _PatchTST_backbone(c_in=c_in, seq_len=seq_len, pred_dim=pred_dim, 
+            self.model_res = _PatchTST_backbone(c_in=c_in, c_out=c_out, seq_len=seq_len, pred_dim=pred_dim, 
                                                 patch_len=patch_len, stride=stride, n_layers=n_layers, d_model=d_model,
                                                 n_heads=n_heads, d_ff=d_ff, norm=norm, attn_dropout=attn_dropout,
                                                 dropout=dropout, act=activation, res_attention=res_attention, pre_norm=pre_norm, 
@@ -443,7 +456,7 @@ class PatchTST(nn.Module):
                                                 individual=individual, revin=revin, affine=affine, subtract_last=subtract_last)
             self.patch_num = self.model_trend.patch_num
         else:
-            self.model = _PatchTST_backbone(c_in=c_in, seq_len=seq_len, pred_dim=pred_dim, 
+            self.model = _PatchTST_backbone(c_in=c_in, c_out=c_out, seq_len=seq_len, pred_dim=pred_dim, 
                                             patch_len=patch_len, stride=stride, n_layers=n_layers, d_model=d_model,
                                             n_heads=n_heads, d_ff=d_ff, norm=norm, attn_dropout=attn_dropout,
                                             dropout=dropout, act=activation, res_attention=res_attention, pre_norm=pre_norm, 
