@@ -339,10 +339,6 @@ class _PatchTST_backbone(nn.Module):
         # RevIn
         self.revin = revin
         self.revin_layer = RevIN(c_in, affine=affine, subtract_last=subtract_last)
-        if c_in != c_out:
-            self.revin_layer_out = RevIN(c_out, affine=affine, subtract_last=subtract_last)
-        else:
-            self.revin_layer_out = self.revin_layer
 
         # # Patching
         self.patch_len = patch_len
@@ -395,7 +391,7 @@ class _PatchTST_backbone(nn.Module):
         
         # denorm
         if self.revin:
-            z = self.revin_layer_out(z, torch.tensor(False, dtype=torch.bool))
+            z = self.revin_layer(z, torch.tensor(False, dtype=torch.bool))
         # to c_out
         if self.c_in != self.c_out:
             z = self.to_c_out(z)
