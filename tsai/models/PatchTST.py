@@ -161,7 +161,7 @@ class _MultiheadAttention(nn.Module):
 
 # %% ../../nbs/050b_models.PatchTST.ipynb 7
 class Flatten_Head(nn.Module):
-    def __init__(self, individual, c_in, c_out, nf, pred_dim, dropout=.1):
+    def __init__(self, individual, c_in, c_out, nf, pred_dim):
         super().__init__()
         
         if isinstance(pred_dim, (tuple, list)):
@@ -176,10 +176,6 @@ class Flatten_Head(nn.Module):
         else:
             self.layer = nn.Sequential(nn.Flatten(start_dim=-2), nn.Linear(nf, pred_dim))
             
-        self.to_c_out = nn.Sequential(nn.Dropout(dropout), 
-                                      nn.Conv1d(c_in, c_out, 1)) if c_in != c_out else Noop
-
-            
     def forward(self, x:Tensor): 
         """
         Args:
@@ -193,7 +189,7 @@ class Flatten_Head(nn.Module):
             x = torch.stack(x_out, dim=1) 
         else: 
             x = self.layer(x)
-        return self.to_c_out(x)
+        return x
      
 
 # %% ../../nbs/050b_models.PatchTST.ipynb 8
@@ -333,7 +329,7 @@ class _TSTiEncoder(nn.Module):  #i means channel-independent
 class _PatchTST_backbone(nn.Module):
     def __init__(self, c_in, c_out, seq_len, pred_dim, patch_len, stride, 
                  n_layers=3, d_model=128, n_heads=16, d_k=None, d_v=None,
-                 d_ff=256, norm='BatchNorm', attn_dropout=0., dropout=0., 
+                 d_ff=256, norm='BatchNorm', attn_dropout=0., dropout=0., conv_dropout=0.1, 
                  act="gelu", res_attention=True, pre_norm=False, store_attn=False,
                  padding_patch=True, individual=False, 
                  revin=True, affine=True, subtract_last=False):
@@ -371,6 +367,9 @@ class _PatchTST_backbone(nn.Module):
         #self.n_vars = c_in
         self.individual = individual
         self.head = Flatten_Head(self.individual, c_in, c_out, self.head_nf, pred_dim)
+        self.c_in, self.c_out = c_in, c_out
+        self.to_c_out = nn.Sequential(nn.Dropout(conv_dropout), 
+                                      nn.Conv1d(c_in, c_out, 1))
         
     
     def forward(self, z:Tensor): 
@@ -397,6 +396,9 @@ class _PatchTST_backbone(nn.Module):
         # denorm
         if self.revin:
             z = self.revin_layer_out(z, torch.tensor(False, dtype=torch.bool))
+        # to c_out
+        if self.c_in != self.c_out:
+            z = self.to_c_out(z)
         return z
 
 # %% ../../nbs/050b_models.PatchTST.ipynb 11
