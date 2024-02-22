@@ -32,6 +32,7 @@ from typing import (
     Iterable,
     Iterator,
     List,
+    Literal,
     Optional,
     Sequence,
     Set,
@@ -59,9 +60,11 @@ from fastcore.imports import *
 from fastcore.meta import *
 from fastcore.test import *
 from fastcore.xtras import *
+from matplotlib.figure import Figure
 from numpy import array
 from numpy.lib.stride_tricks import sliding_window_view
 from torch import Tensor
+from tqdm import tqdm
 
 config = ConfigParser(delimiters=["="])
 config.read("../settings.ini")
@@ -99,8 +102,7 @@ def is_nb():
         import IPython
     except ImportError:
         raise ImportError("You need to install IPython to use is_nb")
-    from IPython.core import getipython
-
+    from IPython import get_ipython
     return get_ipython().__class__.__name__ == "ZMQInteractiveShell"
 
 
@@ -110,7 +112,6 @@ def is_colab():
     except ImportError:
         raise ImportError("You need to install IPython to use is_colab")
     from IPython.core import getipython
-
     return "google.colab" in str(getipython.get_ipython())
 
 
@@ -152,8 +153,8 @@ def save_nb(nb_name=None, attempts=1, verbose=True, wait=2):
         for i in range(attempts):
             _save_nb()
             # confirm it's saved. This takes come variable time.
-            for j in range(20):
-                time.sleep(0.5)
+            for j in range(10):
+                time.sleep(1)
                 saved_time = os.path.getmtime(nb_name)
                 if saved_time >= current_time:
                     break
@@ -230,7 +231,7 @@ def create_scripts(nb_name, max_elapsed=60, wait=2):
         output = py_last_saved(nb_name, max_elapsed)
         beep(output)
     else:
-        nb_export()
+        print("Couldn't get nb_name. Script not created 😔")
 
 
 class Timer:
@@ -402,7 +403,7 @@ def my_setup(*pkgs):
                 gpu_text = "gpu" if device_count == 1 else "gpus"
                 print(f"device          : {device_count} {gpu_text} ({[torch.cuda.get_device_name(i) for i in range(device_count)]})")
             else:
-                print(f"device          : {DEFAULT_DEVICE}")
+                print(f"device          : {default_device()}")
     except:
         pass
     try:

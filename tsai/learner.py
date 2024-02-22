@@ -99,11 +99,13 @@ def load_all(path='export', dls_fname='dls', model_fname='model', learner_fname=
 
     if isinstance(device, int): device = torch.device('cuda', device)
     elif device is None: device = default_device()
-    if device == 'cpu': cpu = True
+    if device.type == 'cpu': cpu = True
     else: cpu = None
 
     path = Path(path)
     learn = load_learner(path/f'{learner_fname}.pkl', cpu=cpu, pickle_module=pickle_module)
+    learn.path = path
+    learn.model_dir = Path() # '.'
     learn.load(f'{model_fname}', with_opt=True, device=device)
 
     
@@ -144,7 +146,7 @@ def load_all(path='export', dls_fname='dls', model_fname='model', learner_fname=
 
 load_learner_all = load_all
 
-# %% ../nbs/018_learner.ipynb 10
+# %% ../nbs/018_learner.ipynb 12
 @patch
 @delegates(subplots)
 def plot_metrics(self: Recorder, nrows=None, ncols=None, figsize=None, final_losses=True, perc=.5, **kwargs):
@@ -230,22 +232,27 @@ def plot_metrics(self: Recorder, nrows=None, ncols=None, figsize=None, final_los
 def plot_metrics(self: Learner, **kwargs):
     self.recorder.plot_metrics(**kwargs)
 
-# %% ../nbs/018_learner.ipynb 11
+# %% ../nbs/018_learner.ipynb 13
 all_arch_names =  ['FCN', 'FCNPlus', 'InceptionTime', 'InceptionTimePlus', 'InCoordTime', 'XCoordTime', 'InceptionTimePlus17x17', 'InceptionTimePlus32x32', 
                    'InceptionTimePlus47x47', 'InceptionTimePlus62x62', 'InceptionTimeXLPlus', 'MultiInceptionTimePlus', 'MiniRocketClassifier', "MiniRocket",
-                   'MiniRocketRegressor', 'MiniRocketVotingClassifier', 'MiniRocketVotingRegressor', 'MiniRocketPlus', 
-                   'MiniRocketHead', 'InceptionRocketPlus', 'MLP', 'gMLP', 'MultiInputNet', 'OmniScaleCNN', 'RNN', 'LSTM', 'GRU', 
-                   'RNNPlus', 'LSTMPlus', 'GRUPlus', 'RNN_FCN', 'LSTM_FCN', 'GRU_FCN', 'MRNN_FCN', 'MLSTM_FCN', 'MGRU_FCN', 'ROCKET', 'RocketClassifier', 
-                   'RocketRegressor', 'ResCNN', 'ResNet', 'ResNetPlus', 'TCN', 'TSPerceiver', 'TST', 'TSTPlus', 'MultiTSTPlus', 'TSiTPlus', 
+                   'MiniRocketRegressor', 'MiniRocketVotingClassifier', 'MiniRocketVotingRegressor', 'MiniRocket', 'MiniRocketPlus', 
+                   'MultiRocket', 'MultiRocketPlus', 'InceptionRocketPlus', 'MLP', 'gMLP', 'MultiInputNet', 'OmniScaleCNN', 'RNN', 'LSTM', 'GRU', 
+                   'RNNPlus', 'LSTMPlus', 'GRUPlus', 'RNN_FCN', 'LSTM_FCN', 'GRU_FCN', 'MRNN_FCN', 'MLSTM_FCN', 'MGRU_FCN', 
+                   'RNN_FCNPlus', 'LSTM_FCNPlus', 'GRU_FCNPlus', 'MRNN_FCNPlus', 'MLSTM_FCNPlus', 'MGRU_FCNPlus', 'ROCKET', 'RocketClassifier', 
+                   'RocketRegressor', 'ResCNN', 'ResNet', 'ResNetPlus', 'TCN', 'TSPerceiver', 'TST', 'TSTPlus', 'MultiTSTPlus', 'TSiT', 'TSiTPlus', 
                    'TabFusionTransformer', 'TSTabFusionTransformer', 'TabModel', 'TabTransformer', 'GatedTabTransformer', 'TransformerModel', 'XCM', 'XCMPlus', 
                    'xresnet1d18', 'xresnet1d34', 'xresnet1d50', 'xresnet1d101', 'xresnet1d152', 'xresnet1d18_deep', 'xresnet1d34_deep', 'xresnet1d50_deep', 
                    'xresnet1d18_deeper', 'xresnet1d34_deeper', 'xresnet1d50_deeper', 'XResNet1dPlus', 'xresnet1d18plus', 'xresnet1d34plus', 
                    'xresnet1d50plus', 'xresnet1d101plus', 'xresnet1d152plus', 'xresnet1d18_deepplus', 'xresnet1d34_deepplus', 'xresnet1d50_deepplus', 
-                   'xresnet1d18_deeperplus', 'xresnet1d34_deeperplus', 'xresnet1d50_deeperplus', 'XceptionTime', 'XceptionTimePlus', 'mWDN',
-                   'TSSequencer', 'TSSequencerPlus', "PatchTST", "RNNAttention", "LSTMAttention", "GRUAttention"]
+                   'xresnet1d18_deeperplus', 'xresnet1d34_deeperplus', 'xresnet1d50_deeperplus', 'XceptionTime', 'XceptionTimePlus', 'mWDN', 'mWDNPlus',
+                   'TSSequencer', 'TSSequencerPlus', "PatchTST", "ConvTran", "ConvTranPlus",
+                   "RNNAttention", "LSTMAttention", "GRUAttention", "RNNAttentionPlus", "LSTMAttentionPlus", "GRUAttentionPlus", 
+                   "TransformerRNNPlus", "TransformerLSTMPlus", "TransformerGRUPlus", "Hydra", "HydraPlus", "HydraMultiRocket", "HydraMultiRocketPlus"]
 
 
 def get_arch(arch_name):
+    if not isinstance(arch_name, str): return arch_name
+    arch = None
     if arch_name == "FCN":  
         from tsai.models.FCN import FCN
         arch = FCN
@@ -300,6 +307,12 @@ def get_arch(arch_name):
     elif arch_name == "MiniRocket":  
         from tsai.models.MINIROCKET_Pytorch import MiniRocket
         arch = MiniRocket
+    elif arch_name == "MultiRocket":  
+        from tsai.models.MultiRocketPlus import MultiRocket
+        arch = MultiRocket
+    elif arch_name == "MultiRocketPlus":  
+        from tsai.models.MultiRocketPlus import MultiRocketPlus
+        arch = MultiRocketPlus
     elif arch_name == "MiniRocketPlus":  
         from tsai.models.MINIROCKETPlus_Pytorch import MiniRocketPlus
         arch = MiniRocketPlus
@@ -312,6 +325,18 @@ def get_arch(arch_name):
     elif arch_name == "InceptionRocketPlus":  
         from tsai.models.MINIROCKETPlus_Pytorch import InceptionRocketPlus
         arch = InceptionRocketPlus
+    elif arch_name == "Hydra":
+        from tsai.models.HydraPlus import Hydra
+        arch = Hydra
+    elif arch_name == "HydraPlus":
+        from tsai.models.HydraPlus import HydraPlus
+        arch = HydraPlus
+    elif arch_name == "HydraMultiRocket":
+        from tsai.models.HydraMultiRocketPlus import HydraMultiRocket
+        arch = HydraMultiRocket
+    elif arch_name == "HydraMultiRocketPlus":
+        from tsai.models.HydraMultiRocketPlus import HydraMultiRocketPlus
+        arch = HydraMultiRocketPlus
     elif arch_name == "MLP":  
         from tsai.models.MLP import MLP
         arch = MLP
@@ -450,9 +475,6 @@ def get_arch(arch_name):
     elif arch_name == "XCMPlus":  
         from tsai.models.XCMPlus import XCMPlus
         arch = XCMPlus
-    elif arch_name == "XResNet1d":  
-        from tsai.models.XResNet1d import XResNet1d
-        arch = XResNet1d
     elif arch_name == "xresnet1d18":  
         from tsai.models.XResNet1d import xresnet1d18
         arch = xresnet1d18
@@ -543,14 +565,39 @@ def get_arch(arch_name):
     elif arch_name == "GRUAttention":  
         from tsai.models.RNNAttention import GRUAttention
         arch = GRUAttention
-    else: print(f"please, confirm the name of the architecture ({arch_name})")
+    elif arch_name == "RNNAttentionPlus":  
+        from tsai.models.RNNAttentionPlus import RNNAttentionPlus
+        arch = RNNAttentionPlus
+    elif arch_name == "LSTMAttentionPlus":  
+        from tsai.models.RNNAttentionPlus import LSTMAttentionPlus
+        arch = LSTMAttentionPlus
+    elif arch_name == "GRUAttentionPlus":  
+        from tsai.models.RNNAttentionPlus import GRUAttentionPlus
+        arch = GRUAttentionPlus
+    elif arch_name == "TransformerRNNPlus":
+        from tsai.models.TransformerRNNPlus import TransformerRNNPlus
+        arch = TransformerRNNPlus
+    elif arch_name == "TransformerLSTMPlus":
+        from tsai.models.TransformerRNNPlus import TransformerLSTMPlus
+        arch = TransformerLSTMPlus
+    elif arch_name == "TransformerGRUPlus":
+        from tsai.models.TransformerRNNPlus import TransformerGRUPlus
+        arch = TransformerGRUPlus
+    elif arch_name in ["ConvTran", "ConvTranPlus"]: 
+        from tsai.models.ConvTranPlus import ConvTranPlus
+        arch = ConvTranPlus
+    else: 
+        raise ValueError(f"Architecture {arch_name} not found. Please, check the name is correct.")
+    
     assert arch.__name__.replace("Plus", "") == arch_name.replace("Plus", ""), f"{arch.__name__} - {arch_name}"
     return arch
 
-# %% ../nbs/018_learner.ipynb 13
+# %% ../nbs/018_learner.ipynb 15
 @delegates(build_ts_model)
-def ts_learner(dls, arch=None, c_in=None, c_out=None, seq_len=None, d=None, splitter=trainable_params,
-               loss_func=None, opt_func=Adam, lr=defaults.lr, cbs=None, metrics=None, path=None,
+def ts_learner(dls, arch=None, c_in=None, c_out=None, seq_len=None, d=None, 
+               s_cat_idxs=None, s_cat_embeddings=None, s_cat_embedding_dims=None, s_cont_idxs=None, 
+               o_cat_idxs=None, o_cat_embeddings=None, o_cat_embedding_dims=None, o_cont_idxs=None,
+               splitter=trainable_params, loss_func=None, opt_func=Adam, lr=defaults.lr, cbs=None, metrics=None, path=None,
                model_dir='models', wd=None, wd_bn_bias=False, train_bn=True, moms=(0.95,0.85,0.95), 
                train_metrics=False, valid_metrics=True, seed=None, **kwargs)->Learner:
 
@@ -564,7 +611,9 @@ def ts_learner(dls, arch=None, c_in=None, c_out=None, seq_len=None, d=None, spli
     else:
         if arch is None: arch = InceptionTimePlus
         elif isinstance(arch, str): arch = get_arch(arch)
-        model = build_ts_model(arch, dls=dls, c_in=c_in, c_out=c_out, seq_len=seq_len, d=d, **kwargs)
+        model = build_ts_model(arch, dls=dls, c_in=c_in, c_out=c_out, seq_len=seq_len, d=d, 
+                               s_cat_idxs=s_cat_idxs, s_cat_embeddings=s_cat_embeddings, s_cat_embedding_dims=s_cat_embedding_dims, s_cont_idxs=s_cont_idxs, 
+                               o_cat_idxs=o_cat_idxs, o_cat_embeddings=o_cat_embeddings, o_cat_embedding_dims=o_cat_embedding_dims, o_cont_idxs=o_cont_idxs, **kwargs)
     if hasattr(model, "backbone") and hasattr(model, "head"):
         splitter = ts_splitter
     if loss_func is None:
@@ -585,7 +634,7 @@ def ts_learner(dls, arch=None, c_in=None, c_out=None, seq_len=None, d=None, spli
 
     return learn
 
-# %% ../nbs/018_learner.ipynb 14
+# %% ../nbs/018_learner.ipynb 16
 @delegates(build_tsimage_model)
 def tsimage_learner(dls, arch=None, pretrained=False,
                loss_func=None, opt_func=Adam, lr=defaults.lr, cbs=None, metrics=None, path=None,
@@ -606,6 +655,6 @@ def tsimage_learner(dls, arch=None, pretrained=False,
 
     return learn
 
-# %% ../nbs/018_learner.ipynb 15
+# %% ../nbs/018_learner.ipynb 17
 @patch
 def decoder(self:Learner, o): return L([self.dls.decodes(oi) for oi in o])
